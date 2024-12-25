@@ -18,15 +18,15 @@ import utils
 
 def train_one_epoch(lr_scheduler, model: torch.nn.Module, criterion: DistillationLoss,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,                    
-                    model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,                    
+                    device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
+                    model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
                     set_training_mode=True):
     model.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
-    
+
     num_steps = len(data_loader)
     idx = 0
 
@@ -39,6 +39,8 @@ def train_one_epoch(lr_scheduler, model: torch.nn.Module, criterion: Distillatio
 
         with torch.cuda.amp.autocast():
             outputs = model(samples)
+            if isinstance(criterion, torch.nn.CrossEntropyLoss):
+                targets = targets.long()
             loss = criterion(samples, outputs, targets)
 
         loss_value = loss.item()
@@ -56,7 +58,7 @@ def train_one_epoch(lr_scheduler, model: torch.nn.Module, criterion: Distillatio
 
         # lr_scheduler.step_update(epoch * num_steps + idx)
         # idx += 1
-        
+
         torch.cuda.synchronize()
         if model_ema is not None:
             model_ema.update(model)

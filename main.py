@@ -11,7 +11,8 @@ from pathlib import Path
 
 from timm.data import Mixup
 from timm.models import create_model
-from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+from timm.loss import LabelSmoothingCrossEntropy as LabelSmoothingCrossEntropy_timm, \
+    SoftTargetCrossEntropy as SoftTargetCrossEntropy_timm
 from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 from timm.utils import NativeScaler, get_state_dict, ModelEma
@@ -25,14 +26,15 @@ from losses import DistillationLoss
 from samplers import RASampler
 import utils
 import os
-
+from my_loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 import models
 from models.stvit import stvit_small, stvit_base, stvit_large
 from lr_scheduler import build_scheduler
 
-archs = {'stvit_small': stvit_small, 
-        'stvit_base': stvit_base, 
-        'stvit_large': stvit_large}
+archs = {'stvit_small': stvit_small,
+         'stvit_base': stvit_base,
+         'stvit_large': stvit_large}
+
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
@@ -252,9 +254,7 @@ def main(args):
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
 
     print(f"Creating model: {args.model}")
-   
     model = archs[args.model](args)
-    
     print(model)
     model.eval()
     flops = FlopCountAnalysis(model, torch.rand(1, 3, 224, 224))
@@ -289,8 +289,6 @@ def main(args):
 
     lr_scheduler, _ = create_scheduler(args, optimizer)
     # lr_scheduler = build_scheduler(args, optimizer, len(data_loader_train))
-
-    criterion = LabelSmoothingCrossEntropy()
 
     if args.mixup > 0.:
         # smoothing is handled with mixup label transform
@@ -340,14 +338,14 @@ def main(args):
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'], strict=False)
-        if args.model_ema:                
+        if args.model_ema:
             model_ema.ema.load_state_dict(checkpoint['model_ema'], strict=False)
-               
+
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
-            
+
             if 'scaler' in checkpoint:
                 loss_scaler.load_state_dict(checkpoint['scaler'])
         if 'max_accuracy' in checkpoint:
@@ -369,7 +367,7 @@ def main(args):
             lr_scheduler, model, criterion, data_loader_train,
             optimizer, device, epoch, loss_scaler,
             args.clip_grad, model_ema, mixup_fn,
-            set_training_mode=args.finetune==''  # keep in eval mode during finetuning
+            set_training_mode=args.finetune == ''  # keep in eval mode during finetuning
         )
 
         lr_scheduler.step(epoch)
@@ -427,16 +425,16 @@ def main(args):
         print('Max accuracy: {:.2f}%'.format(max_accuracy))
         if max_accuracy == test_stats["acc1"]:
             if args.model_ema:
-                    utils.save_on_master({
-                        'model': model_without_ddp.state_dict(),
-                        'optimizer': optimizer.state_dict(),
-                        'lr_scheduler': lr_scheduler.state_dict(),
-                        'epoch': epoch,
-                        'model_ema': get_state_dict(model_ema),
-                        'scaler': loss_scaler.state_dict(),
-                        'args': args,
-                        'max_accuracy': max_accuracy,
-                    }, f"{args.output_dir}/best.pth")
+                utils.save_on_master({
+                    'model': model_without_ddp.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'lr_scheduler': lr_scheduler.state_dict(),
+                    'epoch': epoch,
+                    'model_ema': get_state_dict(model_ema),
+                    'scaler': loss_scaler.state_dict(),
+                    'args': args,
+                    'max_accuracy': max_accuracy,
+                }, f"{args.output_dir}/best.pth")
             else:
                 utils.save_on_master({
                     'model': model_without_ddp.state_dict(),
